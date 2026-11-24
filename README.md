@@ -11,7 +11,10 @@ a busca na TLB com 16 threads, uma para cada entrada.
 Requisitos: Linux, Unix ou macOS, compilador C com POSIX threads e `make`.
 Os testes automatizados também usam Python 3. Não há bibliotecas Python externas.
 
-Dentro do diretório `mavss`, coloque o `BACKING_STORE.bin` fornecido na atividade.
+Execute `make` na raiz do repositório, onde estão `Makefile` e `vm.c`.
+O executável `vm` será criado nessa mesma pasta.
+
+Na raiz do repositório, coloque o `BACKING_STORE.bin` fornecido na atividade.
 O arquivo precisa ter exatamente 65.536 bytes. O arquivo de endereços pode estar
 em outro diretório; informe seu caminho no primeiro argumento.
 
@@ -124,8 +127,10 @@ make clean
 ```
 
 A limpeza remove o executável e as saídas geradas; preserva os dados de entrada.
-O pacote `mavss.tar` contém os fontes, Makefile, README e testes. Os dados
-fornecidos na atividade e os binários compilados ficam fora desse pacote.
+O pacote `mavss.tar` do Classroom contém os fontes, Makefile, testes e
+`evidencias.log`, dentro de `mavss/`. No GitHub, os arquivos de compilação
+ficam na raiz para permitir a execução direta de `make`. Os dados fornecidos
+na atividade e os binários compilados ficam fora das duas entregas.
 
 Referência da atividade: Silberschatz, Galvin e Gagne, *Operating System
 Concepts*, 10ª edição, projeto "Designing a Virtual Memory Manager", com as
