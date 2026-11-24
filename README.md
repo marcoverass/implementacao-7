@@ -107,18 +107,26 @@ produzem os mesmos resultados.
   Entradas livres da TLB são usadas pelo menor índice. Quando todas estão
   ocupadas, a vítima é a inserção mais antiga em FIFO ou o último uso mais
   antigo em LRU. Um hit não muda a ordem de inserção do FIFO.
-- As threads só leem as entradas da TLB. Cada uma tem seu próprio resultado,
-  e a thread principal espera todas com `pthread_join` antes de atualizar a
-  memória ou a TLB. Assim, a ordem de conclusão não altera a tradução.
+- Cada busca cria 16 threads reais, uma por entrada da TLB. Em Linux x86-64
+  e AArch64, elas usam `clone()` com `CLONE_THREAD`, sem depender de `clone3()`.
+  Cada worker faz somente a comparação e publica o resultado por uma variável
+  atômica. A thread principal espera o resultado e o término indicado pelo kernel
+  antes de atualizar a TLB ou reutilizar a pilha. Durante a espera, `sched_yield()`
+  permite que os workers executem mesmo com apenas uma CPU. Os workers não chamam funções
+  da libc nem usam dados locais de thread. Nos demais sistemas, a implementação
+  usa `pthread_create` e `pthread_join`. Para testar esse caminho no Linux,
+  compile com `make CPPFLAGS=-DVM_USE_PTHREAD=1`.
 - Os bytes são convertidos explicitamente para o intervalo -128 a 127,
   sem depender de `char` ser assinado na plataforma.
-- Toda a entrada é validada antes da simulação. A saída é gravada em
-  `correct.txt.tmp` e só substitui `correct.txt` depois de escrita e fechada
-  com sucesso. Um erro retorna código diferente de zero e mensagem em stderr.
+- Toda a entrada e o tamanho do backing são validados antes de abrir
+  `correct.txt`. A saída usa diretamente `fopen`, `fprintf` e `fclose`, sem
+  renomear ou remover arquivos. Erros de argumentos, entrada e backing preservam
+  a saída anterior. Se houver falha durante a simulação ou a escrita, o programa
+  retorna código diferente de zero; nesse caso, a saída pode estar incompleta.
 
 ## Arquivos
 
-`vm.c` contém a validação, a tradução, as políticas e a busca com pthreads.
+`vm.c` contém a validação, a tradução, as políticas e a busca com threads.
 `Makefile` compila, limpa e executa os testes. `tests/test_vm.py` contém os
 testes e o modelo independente. Este README documenta o uso e as decisões.
 

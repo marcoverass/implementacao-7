@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 
 #include <ctype.h>
@@ -9,7 +10,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
+#include <stdatomic.h>
+
+#ifndef VM_USE_PTHREAD
+#define VM_USE_PTHREAD 0
+#endif
+#if defined(__linux__) && (defined(__x86_64__) || defined(__aarch64__)) && !VM_USE_PTHREAD
+#include <sched.h>
+#define VM_LINUX_THREADS 1
+#else
+#define VM_LINUX_THREADS 0
+#endif
 
 #define PAGE_SIZE 256
 #define PAGE_COUNT 256
@@ -59,6 +70,10 @@ typedef struct {
     const TlbEntry *entry;
     int page;
     int matched;
+#if VM_LINUX_THREADS
+    atomic_int finished;
+    atomic_int tid;
+#endif
 } SearchTask;
 
 static int parse_policy(const char *name, Policy *policy)
@@ -74,15 +89,23 @@ static int parse_policy(const char *name, Policy *policy)
     return -1;
 }
 
-static int regular_file(FILE *file, const char *name)
+/* Confere o backing com leituras comuns, sem consultar metadados do arquivo. */
+static int validate_backing(FILE *file)
 {
-    struct stat info;
-    if (fstat(fileno(file), &info) != 0) {
-        fprintf(stderr, "Erro ao consultar '%s': %s.\n", name, strerror(errno));
+    unsigned char buffer[1024];
+    size_t total = 0;
+    size_t amount;
+    while ((amount = fread(buffer, 1, sizeof(buffer), file)) != 0) {
+        total += amount;
+        if (total > PAGE_COUNT * PAGE_SIZE)
+            break;
+    }
+    if (ferror(file)) {
+        fprintf(stderr, "Erro ao ler BACKING_STORE.bin: %s.\n", strerror(errno));
         return -1;
     }
-    if (!S_ISREG(info.st_mode)) {
-        fprintf(stderr, "Erro: '%s' deve ser um arquivo regular.\n", name);
+    if (total != PAGE_COUNT * PAGE_SIZE) {
+        fprintf(stderr, "Erro: BACKING_STORE.bin deve conter exatamente 65536 bytes.\n");
         return -1;
     }
     return 0;
@@ -94,6 +117,7 @@ static int read_addresses(const char *name, uint32_t **addresses, size_t *count)
     FILE *file = fopen(name, "rb");
     uint32_t *items = NULL;
     char *line = NULL;
+    char input_buffer[4096];
     size_t line_capacity = 0, capacity = 0, line_number = 0;
     int status = -1;
     ssize_t length;
@@ -104,8 +128,11 @@ static int read_addresses(const char *name, uint32_t **addresses, size_t *count)
         fprintf(stderr, "Erro ao abrir os enderecos '%s': %s.\n", name, strerror(errno));
         return -1;
     }
-    if (regular_file(file, name) != 0)
+
+    if (setvbuf(file, input_buffer, _IOFBF, sizeof(input_buffer)) != 0) {
+        fprintf(stderr, "Erro ao configurar a leitura dos enderecos.\n");
         goto done;
+    }
 
     while ((length = getline(&line, &line_capacity, file)) >= 0) {
         size_t pos = 0;
@@ -191,13 +218,23 @@ static void initialize(Vm *vm, Policy page_policy, Policy tlb_policy)
     vm->tlb_policy = tlb_policy;
 }
 
+#if VM_LINUX_THREADS
+/* Os workers fazem apenas a comparacao: nenhuma chamada de libc ou uso de TLS. */
+static int search_entry_linux(void *argument)
+{
+    SearchTask *task = argument;
+    task->matched = task->entry->page == task->page;
+    atomic_store_explicit(&task->finished, 1, memory_order_release);
+    return 0;
+}
+#else
 static void *search_entry(void *argument)
 {
     SearchTask *task = argument;
-    /* Cada thread le uma entrada e escreve apenas no proprio resultado. */
     task->matched = task->entry->page == task->page;
     return NULL;
 }
+#endif
 
 static int search_tlb(const Vm *vm, int page, int *slot)
 {
@@ -214,6 +251,46 @@ static int search_tlb(const Vm *vm, int page, int *slot)
         return 0;
     }
 
+#if VM_LINUX_THREADS
+    enum { THREAD_STACK_SIZE = 64 * 1024 };
+    _Alignas(16) static unsigned char stacks[TLB_SIZE][THREAD_STACK_SIZE];
+    _Static_assert(ATOMIC_INT_LOCK_FREE == 2, "O TID precisa de acesso atomico sem locks");
+    _Static_assert(sizeof(atomic_int) == sizeof(int), "TID incompativel com clone");
+    SearchTask tasks[TLB_SIZE];
+    int created = 0, status = 0;
+    const int flags = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
+                      CLONE_THREAD | CLONE_SYSVSEM | CLONE_PARENT_SETTID |
+                      CLONE_CHILD_CLEARTID;
+
+    for (int i = 0; i < TLB_SIZE; ++i) {
+        tasks[i].entry = &vm->tlb[i];
+        tasks[i].page = page;
+        tasks[i].matched = 0;
+        atomic_init(&tasks[i].finished, 0);
+        atomic_init(&tasks[i].tid, -1);
+        if (clone(search_entry_linux, stacks[i] + THREAD_STACK_SIZE, flags,
+                  &tasks[i], (int *)&tasks[i].tid, NULL, (int *)&tasks[i].tid) == -1) {
+            fprintf(stderr, "Erro ao criar a thread da TLB %d: %s.\n", i, strerror(errno));
+            status = -1;
+            break;
+        }
+        ++created;
+    }
+    for (int i = 0; i < created; ++i) {
+        /*
+         * finished publica o resultado em C11. O kernel zera tid somente na
+         * saida da thread; assim a pilha nao e reutilizada antes do termino.
+         */
+        while (!atomic_load_explicit(&tasks[i].finished, memory_order_acquire) ||
+               atomic_load_explicit(&tasks[i].tid, memory_order_acquire) != 0) {
+            /* Deixa os workers executarem mesmo com apenas uma CPU disponivel. */
+            sched_yield();
+        }
+        if (tasks[i].matched)
+            *slot = i;
+    }
+    return status;
+#else
     pthread_t threads[TLB_SIZE];
     SearchTask tasks[TLB_SIZE];
     int created = 0, status = 0;
@@ -242,6 +319,7 @@ static int search_tlb(const Vm *vm, int page, int *slot)
             *slot = i;
     }
     return status;
+#endif
 }
 
 static void invalidate_tlb(Vm *vm, int page)
@@ -349,8 +427,12 @@ int main(int argc, char **argv)
     size_t count = 0;
     FILE *backing = NULL, *output = NULL;
     int status = EXIT_FAILURE;
-    int output_created = 0;
-    const char *temporary_output = "correct.txt.tmp";
+    char backing_buffer[4096], output_buffer[4096];
+
+    if (setvbuf(stdout, NULL, _IONBF, 0) != 0) {
+        fprintf(stderr, "Erro ao configurar a saida do terminal.\n");
+        return EXIT_FAILURE;
+    }
 
     if (argc != 4) {
         fprintf(stderr, "Erro: informe exatamente 3 argumentos.\n"
@@ -368,18 +450,21 @@ int main(int argc, char **argv)
         fprintf(stderr, "Erro ao abrir BACKING_STORE.bin: %s.\n", strerror(errno));
         goto done;
     }
-    if (regular_file(backing, "BACKING_STORE.bin") != 0)
-        goto done;
-    if (fseek(backing, 0, SEEK_END) != 0 || ftell(backing) != PAGE_COUNT * PAGE_SIZE) {
-        fprintf(stderr, "Erro: BACKING_STORE.bin deve conter exatamente 65536 bytes.\n");
+    if (setvbuf(backing, backing_buffer, _IOFBF, sizeof(backing_buffer)) != 0) {
+        fprintf(stderr, "Erro ao configurar a leitura de BACKING_STORE.bin.\n");
         goto done;
     }
-    output = fopen(temporary_output, "wb");
+    if (validate_backing(backing) != 0)
+        goto done;
+    output = fopen("correct.txt", "wb");
     if (!output) {
-        fprintf(stderr, "Erro ao criar a saida temporaria: %s.\n", strerror(errno));
+        fprintf(stderr, "Erro ao criar correct.txt: %s.\n", strerror(errno));
         goto done;
     }
-    output_created = 1;
+    if (setvbuf(output, output_buffer, _IOFBF, sizeof(output_buffer)) != 0) {
+        fprintf(stderr, "Erro ao configurar a escrita de correct.txt.\n");
+        goto done;
+    }
     initialize(&vm, page_policy, tlb_policy);
     for (size_t i = 0; i < count; ++i) {
         if (translate(&vm, backing, output, addresses[i]) != 0)
@@ -408,10 +493,6 @@ int main(int argc, char **argv)
         goto done;
     }
     backing = NULL;
-    if (rename(temporary_output, "correct.txt") != 0) {
-        fprintf(stderr, "Erro ao salvar correct.txt: %s.\n", strerror(errno));
-        goto done;
-    }
     printf("Saida salva em correct.txt (%zu enderecos).\n", vm.translated);
     status = EXIT_SUCCESS;
 done:
@@ -419,8 +500,6 @@ done:
         fprintf(stderr, "Erro ao fechar a saida incompleta.\n");
     if (backing && fclose(backing) != 0)
         fprintf(stderr, "Erro ao fechar BACKING_STORE.bin.\n");
-    if (status != EXIT_SUCCESS && output_created)
-        (void)remove(temporary_output);
     free(addresses);
     return status;
 }

@@ -134,7 +134,7 @@ def errors(work):
     output.mkdir()
     result = run(work, valid, "fifo", "fifo")
     require(result.returncode != 0 and "Erro" in result.stderr, "Falha ao salvar nao tratada")
-    require(not (work / "correct.txt.tmp").exists(), "Saida temporaria incompleta foi mantida")
+    require(output.is_dir(), "Falha ao salvar alterou o diretorio existente")
     output.rmdir()
     print(f"OK erros: {len(cases)} chamadas, {len(invalid)} formatos, backing e saida")
 

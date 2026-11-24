@@ -95,3 +95,201 @@ TODAS AS ETAPAS PASSARAM; CONFIGURACAO PADRAO RESTAURADA
 [?2004lexit
 
 Script done on 2026-11-23 18:38:49-03:00 [COMMAND_EXIT_CODE="0"]
+Script started on 2026-11-24 19:44:46-03:00 [COMMAND="/usr/bin/python3 -u '/mnt/c/Users/marco/AppData/Local/Packages/openai.codex_2p2nqsd0c76g0/AC/#!sandbox.{7a143324-3a92-4d0b-825b-92ccb2b7c130}/Temp/mavss-compat-trabalho/validar_final.py' /tmp/mavss-validacao-qvvcq8y0/mavss /tmp/mavss-validacao-qvvcq8y0/dados '/mnt/c/Users/marco/AppData/Local/Packages/openai.codex_2p2nqsd0c76g0/AC/#!sandbox.{7a143324-3a92-4d0b-825b-92ccb2b7c130}/Temp/mavss-compat-trabalho'" <not executed on terminal>]
+
+=== Identificacao da validacao de compatibilidade ===
+$ date
+Tue Nov 24 19:44:46 -03 2026
+[codigo=0; tempo=0.001s]
+Validacao local. Nenhuma tentativa do Greep foi utilizada. O filtro abaixo e simulado e nao representa a politica real do Greep.
+$ whoami
+marco
+[codigo=0; tempo=0.002s]
+$ pwd
+/tmp/mavss-validacao-qvvcq8y0/mavss
+[codigo=0; tempo=0.005s]
+$ sha256sum vm.c
+b3ff1d8d7d48c72d3a9377ca3fbbebb1b182c24156a2180945e437b6a1c4bb30  vm.c
+[codigo=0; tempo=0.003s]
+
+=== Compilacao e comparacao integral ===
+$ date
+Tue Nov 24 19:44:46 -03 2026
+[codigo=0; tempo=0.002s]
+$ make clean
+rm -f vm vm.exe *.o correct.txt correct.txt.tmp
+[codigo=0; tempo=0.006s]
+$ make CFLAGS=-std=c11 -O2 -Wall -Wextra -Wpedantic -Werror
+cc  -DFRAME_COUNT=128 -DUSE_TLB=1 -DTHREADED_TLB=1 -std=c11 -O2 -Wall -Wextra -Wpedantic -Werror vm.c  -pthread -o vm
+[codigo=0; tempo=1.235s]
+$ ./vm /tmp/mavss-validacao-qvvcq8y0/dados/addresses.txt lru fifo
+Saida salva em correct.txt (1000 enderecos).
+[codigo=0; tempo=0.721s]
+$ tail -n 5 correct.txt
+Number of Translated Addresses = 1000
+Page Faults = 539
+Page Fault Rate = 0.539
+TLB Hits = 54
+TLB Hit Rate = 0.054
+[codigo=0; tempo=0.004s]
+$ diff -u /tmp/mavss-validacao-qvvcq8y0/dados/correct_referencia.txt correct.txt
+[codigo=0; tempo=0.003s]
+
+=== Testes funcionais e etapas da rubrica ===
+$ date
+Tue Nov 24 19:44:48 -03 2026
+[codigo=0; tempo=0.001s]
+$ make test DATA_DIR=/tmp/mavss-validacao-qvvcq8y0/dados
+cc  -DFRAME_COUNT=128 -DUSE_TLB=1 -DTHREADED_TLB=1 -std=c11 -O2 -Wall -Wextra -Wpedantic vm.c  -pthread -o vm
+python3 tests/test_vm.py --data "/tmp/mavss-validacao-qvvcq8y0/dados"
+OK referencia fifo/fifo: 1000 enderecos, 538 faults, 54 hits
+OK referencia fifo/lru: 1000 enderecos, 538 faults, 55 hits
+OK referencia lru/fifo: 1000 enderecos, 539 faults, 54 hits
+OK referencia lru/lru: 1000 enderecos, 539 faults, 55 hits
+OK limites de pagina, mascara de 16 bits, FIFO/LRU, invalidacao da TLB e CRLF
+OK arquivo sem permissao de leitura
+OK erros: 8 chamadas, 14 formatos, backing e saida
+TODOS OS TESTES PASSARAM
+[codigo=0; tempo=5.683s]
+$ make etapas DATA_DIR=/tmp/mavss-validacao-qvvcq8y0/dados
+python3 tests/test_vm.py --stages --data "/tmp/mavss-validacao-qvvcq8y0/dados"
+make[1]: Entering directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+cc  -DFRAME_COUNT=256 -DUSE_TLB=0 -DTHREADED_TLB=0 -std=c11 -O2 -Wall -Wextra -Wpedantic vm.c  -pthread -o vm
+make[1]: Leaving directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+OK etapa frames=256 TLB=0 threads=0 fifo/fifo: faults=244, hits=0
+OK etapa frames=256 TLB=0 threads=0 lru/fifo: faults=244, hits=0
+make[1]: Entering directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+cc  -DFRAME_COUNT=128 -DUSE_TLB=0 -DTHREADED_TLB=0 -std=c11 -O2 -Wall -Wextra -Wpedantic vm.c  -pthread -o vm
+make[1]: Leaving directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+OK etapa frames=128 TLB=0 threads=0 fifo/fifo: faults=538, hits=0
+OK etapa frames=128 TLB=0 threads=0 lru/fifo: faults=539, hits=0
+make[1]: Entering directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+cc  -DFRAME_COUNT=128 -DUSE_TLB=1 -DTHREADED_TLB=0 -std=c11 -O2 -Wall -Wextra -Wpedantic vm.c  -pthread -o vm
+make[1]: Leaving directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+OK etapa frames=128 TLB=1 threads=0 fifo/fifo: faults=538, hits=54
+OK etapa frames=128 TLB=1 threads=0 fifo/lru: faults=538, hits=55
+OK etapa frames=128 TLB=1 threads=0 lru/fifo: faults=539, hits=54
+OK etapa frames=128 TLB=1 threads=0 lru/lru: faults=539, hits=55
+make[1]: Entering directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+cc  -DFRAME_COUNT=128 -DUSE_TLB=1 -DTHREADED_TLB=1 -std=c11 -O2 -Wall -Wextra -Wpedantic vm.c  -pthread -o vm
+make[1]: Leaving directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+OK etapa frames=128 TLB=1 threads=1 fifo/fifo: faults=538, hits=54
+OK etapa frames=128 TLB=1 threads=1 fifo/lru: faults=538, hits=55
+OK etapa frames=128 TLB=1 threads=1 lru/fifo: faults=539, hits=54
+OK etapa frames=128 TLB=1 threads=1 lru/lru: faults=539, hits=55
+make[1]: Entering directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+cc  -DFRAME_COUNT=128 -DUSE_TLB=1 -DTHREADED_TLB=1 -std=c11 -O2 -Wall -Wextra -Wpedantic vm.c  -pthread -o vm
+make[1]: Leaving directory '/tmp/mavss-validacao-qvvcq8y0/mavss'
+TODAS AS ETAPAS PASSARAM; CONFIGURACAO PADRAO RESTAURADA
+[codigo=0; tempo=5.230s]
+
+=== Caminho POSIX e sanitizador ===
+$ date
+Tue Nov 24 19:44:59 -03 2026
+[codigo=0; tempo=0.001s]
+$ make test DATA_DIR=/tmp/mavss-validacao-qvvcq8y0/dados CPPFLAGS=-DVM_USE_PTHREAD=1
+cc -DVM_USE_PTHREAD=1 -DFRAME_COUNT=128 -DUSE_TLB=1 -DTHREADED_TLB=1 -std=c11 -O2 -Wall -Wextra -Wpedantic vm.c  -pthread -o vm
+python3 tests/test_vm.py --data "/tmp/mavss-validacao-qvvcq8y0/dados"
+OK referencia fifo/fifo: 1000 enderecos, 538 faults, 54 hits
+OK referencia fifo/lru: 1000 enderecos, 538 faults, 55 hits
+OK referencia lru/fifo: 1000 enderecos, 539 faults, 54 hits
+OK referencia lru/lru: 1000 enderecos, 539 faults, 55 hits
+OK limites de pagina, mascara de 16 bits, FIFO/LRU, invalidacao da TLB e CRLF
+OK arquivo sem permissao de leitura
+OK erros: 8 chamadas, 14 formatos, backing e saida
+TODOS OS TESTES PASSARAM
+[codigo=0; tempo=7.096s]
+$ make test DATA_DIR=/tmp/mavss-validacao-qvvcq8y0/dados CFLAGS=-std=c11 -O1 -g -Wall -Wextra -Wpedantic -fsanitize=undefined -fno-sanitize-recover=all LDFLAGS=-fsanitize=undefined
+cc  -DFRAME_COUNT=128 -DUSE_TLB=1 -DTHREADED_TLB=1 -std=c11 -O1 -g -Wall -Wextra -Wpedantic -fsanitize=undefined -fno-sanitize-recover=all vm.c -fsanitize=undefined -pthread -o vm
+python3 tests/test_vm.py --data "/tmp/mavss-validacao-qvvcq8y0/dados"
+OK referencia fifo/fifo: 1000 enderecos, 538 faults, 54 hits
+OK referencia fifo/lru: 1000 enderecos, 538 faults, 55 hits
+OK referencia lru/fifo: 1000 enderecos, 539 faults, 54 hits
+OK referencia lru/lru: 1000 enderecos, 539 faults, 55 hits
+OK limites de pagina, mascara de 16 bits, FIFO/LRU, invalidacao da TLB e CRLF
+OK arquivo sem permissao de leitura
+OK erros: 8 chamadas, 14 formatos, backing e saida
+TODOS OS TESTES PASSARAM
+[codigo=0; tempo=5.775s]
+$ make
+cc  -DFRAME_COUNT=128 -DUSE_TLB=1 -DTHREADED_TLB=1 -std=c11 -O2 -Wall -Wextra -Wpedantic vm.c  -pthread -o vm
+[codigo=0; tempo=0.800s]
+
+=== Rastreamento das threads Linux ===
+$ date
+Tue Nov 24 19:45:13 -03 2026
+[codigo=0; tempo=0.001s]
+$ dpkg-deb -x /mnt/c/Users/marco/AppData/Local/Packages/openai.codex_2p2nqsd0c76g0/AC/#!sandbox.{7a143324-3a92-4d0b-825b-92ccb2b7c130}/Temp/mavss-compat-trabalho/strace_6.8-0ubuntu2_amd64.deb /mnt/c/Users/marco/AppData/Local/Packages/openai.codex_2p2nqsd0c76g0/AC/#!sandbox.{7a143324-3a92-4d0b-825b-92ccb2b7c130}/Temp/mavss-compat-trabalho/strace-extraido
+[codigo=0; tempo=0.281s]
+$ /mnt/c/Users/marco/AppData/Local/Packages/openai.codex_2p2nqsd0c76g0/AC/#!sandbox.{7a143324-3a92-4d0b-825b-92ccb2b7c130}/Temp/mavss-compat-trabalho/strace-extraido/usr/bin/strace -f -qq -o /tmp/mavss-validacao-qvvcq8y0/mavss/vm-local.trace ./vm um.txt lru fifo
+Saida salva em correct.txt (1 enderecos).
+[codigo=0; tempo=0.313s]
+Contagem de syscalls no processo completo: {"clone": 16, "clone3": 0, "fstat": 2, "madvise": 0, "rename": 0, "rseq": 1, "sched_yield": 1, "set_robust_list": 1}
+OK: 16 chamadas clone com CLONE_THREAD para uma busca. rseq, set_robust_list e fstat restantes pertencem a inicializacao da libc, anterior a main.
+
+=== Filtro seccomp local e teste em uma CPU ===
+$ date
+Tue Nov 24 19:45:13 -03 2026
+[codigo=0; tempo=0.003s]
+$ cat /mnt/c/Users/marco/AppData/Local/Packages/openai.codex_2p2nqsd0c76g0/AC/#!sandbox.{7a143324-3a92-4d0b-825b-92ccb2b7c130}/Temp/mavss-compat-trabalho/restricoes.c
+
+#define _GNU_SOURCE
+#include <linux/filter.h>
+#include <linux/seccomp.h>
+#include <sys/prctl.h>
+#include <sys/syscall.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <unistd.h>
+#define DENY(n) BPF_JUMP(BPF_JMP|BPF_JEQ|BPF_K, __NR_##n, 0, 1), BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_KILL_PROCESS)
+__attribute__((constructor)) static void restrict_calls(void) {
+    struct sock_filter filter[] = {
+        BPF_STMT(BPF_LD|BPF_W|BPF_ABS, offsetof(struct seccomp_data,nr)),
+        DENY(clone3), DENY(rseq), DENY(set_robust_list), DENY(madvise),
+        DENY(rename), DENY(renameat), DENY(renameat2), DENY(unlink), DENY(unlinkat),
+        DENY(newfstatat), DENY(fstat), DENY(futex),
+        BPF_STMT(BPF_RET|BPF_K, SECCOMP_RET_ALLOW)
+    };
+    struct sock_fprog prog={sizeof(filter)/sizeof(filter[0]),filter};
+    if (prctl(PR_SET_NO_NEW_PRIVS,1,0,0,0) || prctl(PR_SET_SECCOMP,SECCOMP_MODE_FILTER,&prog)) {
+        perror("filtro de teste"); _exit(90);
+    }
+}
+[codigo=0; tempo=0.020s]
+$ cc -shared -fPIC -Wall -Wextra /mnt/c/Users/marco/AppData/Local/Packages/openai.codex_2p2nqsd0c76g0/AC/#!sandbox.{7a143324-3a92-4d0b-825b-92ccb2b7c130}/Temp/mavss-compat-trabalho/restricoes.c -o /tmp/mavss-validacao-qvvcq8y0/mavss/restricoes.so
+[codigo=0; tempo=0.990s]
+$ cc -std=c11 -O2 -pthread /mnt/c/Users/marco/AppData/Local/Packages/openai.codex_2p2nqsd0c76g0/AC/#!sandbox.{7a143324-3a92-4d0b-825b-92ccb2b7c130}/Temp/mavss-compat-trabalho/vm_antes.c -o vm_antes
+[codigo=0; tempo=0.883s]
+$ ./vm_antes /tmp/mavss-validacao-qvvcq8y0/dados/addresses.txt lru fifo
+[codigo=-31; tempo=0.016s]
+SIGSYS acima e esperado apenas na versao anterior usada como controle.
+$ ./vm /tmp/mavss-validacao-qvvcq8y0/dados/addresses.txt fifo fifo
+Saida salva em correct.txt (1000 enderecos).
+[codigo=0; tempo=0.649s]
+OK filtro local fifo/fifo: 1000 enderecos; 538 faults; 54 hits.
+$ ./vm /tmp/mavss-validacao-qvvcq8y0/dados/addresses.txt fifo lru
+Saida salva em correct.txt (1000 enderecos).
+[codigo=0; tempo=0.630s]
+OK filtro local fifo/lru: 1000 enderecos; 538 faults; 55 hits.
+$ ./vm /tmp/mavss-validacao-qvvcq8y0/dados/addresses.txt lru fifo
+Saida salva em correct.txt (1000 enderecos).
+[codigo=0; tempo=0.644s]
+OK filtro local lru/fifo: 1000 enderecos; 539 faults; 54 hits.
+$ ./vm /tmp/mavss-validacao-qvvcq8y0/dados/addresses.txt lru lru
+Saida salva em correct.txt (1000 enderecos).
+[codigo=0; tempo=0.667s]
+OK filtro local lru/lru: 1000 enderecos; 539 faults; 55 hits.
+Afinidade definida antes do exec: CPU 0.
+$ ./vm /tmp/mavss-validacao-qvvcq8y0/dados/addresses.txt lru fifo
+Saida salva em correct.txt (1000 enderecos).
+[codigo=0; tempo=8.353s]
+OK filtro local e uma CPU: referencia integral identica, 539 faults e 54 hits.
+
+=== Encerramento ===
+$ date
+Tue Nov 24 19:45:27 -03 2026
+[codigo=0; tempo=0.003s]
+TODAS AS VERIFICACOES LOCAIS PASSARAM. Configuracao padrao: 128 frames, TLB e 16 threads.
+O resultado no Greep continua pendente de uma nova execucao pelo aluno.
+
+Script done on 2026-11-24 19:45:27-03:00 [COMMAND_EXIT_CODE="0"]
